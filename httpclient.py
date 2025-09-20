@@ -34,6 +34,8 @@ class HTTPClient:
     # Receive the response
     def read_response(self):
         response = b""
+        with self.socket.makefile('rb') as sock_file:  
+            response = sock_file.read()
         return response
 
     def GET(self, url, args=None):
@@ -44,9 +46,22 @@ class HTTPClient:
         print(path)
         print(queries)
 
-        with socket.socket(socket.AF_INET,socket.SOCK_STREAM) as sock:
+        # build the request
+        request = "GET "
+        request += ("/" + (path or "") + (queries or "") + " HTTP/1.1\r\n")
+        request += ("Host: " + (ip or "") + ":" + str(port or "") + "\r\n")
+        request += ("Connection: close\r\n")    # close the port as per the hints
+        request += "\r\n"   # headers end with a blank line
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.connect((ip, port))
             print(f"connected to server at host {ip} and port {port}")
+
+            self.socket = sock
+            sock.sendall(request.encode("utf-8"))
+            response_bytes = self.read_response()
+
+            print(response_bytes)
         
         return "Not yet implemented"
         return HTTPResponse(code, body)
@@ -77,12 +92,17 @@ class HTTPClient:
                 ip = ip_and_port
                 port = 80   # default
 
+        path = None
         queries = None
         if "?" in path_and_queries:     # if there are any specified queries
             path, queries = path_and_queries.split("?", 1)
+        else: 
+            path = path_and_queries
 
-        path = self.percent_encode(path)
-        queries = self.percent_encode(queries)
+        if path:
+            path = self.percent_encode(path)
+        if queries:
+            queries = self.percent_encode(queries)
 
         # convert port to int
         port = int(port)
