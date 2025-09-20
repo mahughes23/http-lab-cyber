@@ -36,12 +36,71 @@ class HTTPClient:
         response = b""
         return response
 
-
     def GET(self, url, args=None):
-         return HTTPResponse(code, body)
+        ip, port, path, queries = self.parse_url(url)
+        
+        print(ip)
+        print(port)
+        print(path)
+        print(queries)
+
+        with socket.socket(socket.AF_INET,socket.SOCK_STREAM) as sock:
+            sock.connect((ip, port))
+            print(f"connected to server at host {ip} and port {port}")
+        
+        return "Not yet implemented"
+        return HTTPResponse(code, body)
 
     def POST(self, url, args=None):
+        return "Not yet implemented"
         return HTTPResponse(code, body)
+
+    def parse_url(self, url):
+        no_protocol = url.split("//")
+        ip_and_port, path_and_queries = no_protocol[1].split("/", 1)
+        
+        ip = None
+        port = None
+        if "]" in ip_and_port:  # if IPv6, split it by the closed bracket
+            ip, port = ip_and_port.split("]", 1)
+            ip = ip[1:]     # remove the first "[" to isolate the ip
+            port = port[1:] # remove the left-over ":" to isolate the port
+            if port == "":   # if port is empty, set it to default value of 80
+                port = 80
+            else:
+                pass
+                # port = int(port)    # convert it to an int
+        else:   # IPv4
+            if ":" in ip_and_port:  # if there's a port separator
+                ip, port = ip_and_port.split(":")
+            else:
+                ip = ip_and_port
+                port = 80   # default
+
+        queries = None
+        if "?" in path_and_queries:     # if there are any specified queries
+            path, queries = path_and_queries.split("?", 1)
+
+        path = self.percent_encode(path)
+        queries = self.percent_encode(queries)
+
+        # convert port to int
+        port = int(port)
+
+        parsed_url = [ip, port, path, queries]
+        return parsed_url
+
+    def percent_encode(self, string):
+        result = []
+
+        for char in string:
+            if (char in "-_./") or "A" <= char <= "Z" or "a" <= char <= "z" or "0" <= char <= "9":   # we don't want to encode these
+                result.append(char) # add the normal char to the result
+            else:
+                # encode the char
+                for byte in char.encode("utf-8"):   # will parse "é" as xc3 xc9 for example
+                    result.append(f"%{byte:02X}")   # set the format to uppercase hexadecimal with 2 digits
+        return "".join(result)
     
     def command(self, command, url, args):
         assert isinstance(url, str)
