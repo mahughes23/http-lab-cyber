@@ -39,19 +39,23 @@ class HTTPClient:
         return response
 
     def GET(self, url, args=None):
-        ip, port, path, queries = self.parse_url(url)
+        ip, port, path, queries, query_byte_count = self.parse_url(url)
         
         print(ip)
         print(port)
         print(path)
         print(queries)
+        print(query_byte_count)
 
         # build the request
+        # header
         request = "GET "
         request += ("/" + (path or "") + (queries or "") + " HTTP/1.1\r\n")
         request += ("Host: " + (ip or "") + ":" + str(port or "") + "\r\n")
         request += ("Connection: close\r\n")    # close the port as per the hints
         request += "\r\n"   # headers end with a blank line
+
+        # no body (because it's GET)
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.connect((ip, port))
@@ -67,6 +71,39 @@ class HTTPClient:
         return HTTPResponse(code, body)
 
     def POST(self, url, args=None):
+        ip, port, path, queries, query_byte_count = self.parse_url(url)
+        
+        print(ip)
+        print(port)
+        print(path)
+        print(queries)
+        print(query_byte_count)
+
+        # build the request
+        # header
+        request = "POST "
+        request += ("/" + (path or "") + (queries or "") + " HTTP/1.1\r\n")
+        request += ("Host: " + (ip or "") + ":" + str(port or "") + "\r\n")
+        request += ("Connection: close\r\n")    # close the port as per the hints
+        if queries is not None:
+            request += ("Content-Type: application/x-www-form-urlencoded\r\n")
+            request += ("Content-Length: " + str(query_byte_count) + "\r\n")
+        request += "\r\n"   # headers end with a blank line
+
+        # body
+        unencoded_query = url.split("?", 1)[1]  # split once, the second half is the query
+        print("body: " + unencoded_query)
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.connect((ip, port))
+            print(f"connected to server at host {ip} and port {port}")
+
+            self.socket = sock
+            sock.sendall(request.encode("utf-8"))
+            response_bytes = self.read_response()
+
+            print(response_bytes)
+        
         return "Not yet implemented"
         return HTTPResponse(code, body)
 
@@ -99,20 +136,21 @@ class HTTPClient:
         else: 
             path = path_and_queries
 
+        query_byte_count = 0
         if path:
-            path = self.percent_encode(path)
+            path = self.percent_encode(path)[0]
         if queries:
-            queries = self.percent_encode(queries)
+            queries, query_byte_count = self.percent_encode(queries)
 
         # convert port to int
         port = int(port)
 
-        parsed_url = [ip, port, path, queries]
+        parsed_url = [ip, port, path, queries, query_byte_count]
         return parsed_url
 
     def percent_encode(self, string):
         result = []
-
+        byte_count = 0
         for char in string:
             if (char in "-_./") or "A" <= char <= "Z" or "a" <= char <= "z" or "0" <= char <= "9":   # we don't want to encode these
                 result.append(char) # add the normal char to the result
@@ -120,7 +158,8 @@ class HTTPClient:
                 # encode the char
                 for byte in char.encode("utf-8"):   # will parse "é" as xc3 xc9 for example
                     result.append(f"%{byte:02X}")   # set the format to uppercase hexadecimal with 2 digits
-        return "".join(result)
+            byte_count += 1
+        return ["".join(result), byte_count]
     
     def command(self, command, url, args):
         assert isinstance(url, str)
