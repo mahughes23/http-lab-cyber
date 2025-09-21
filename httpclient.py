@@ -12,18 +12,32 @@ class HTTPResponse:
 class HTTPClient:
     
     def connect(self, host, port):
-        return None   
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.socket.connect((host, port)) 
+        print(f"connected to server at host {host} and port {port}")
+        return
 
     def get_code(self, data):
-        return None
+        status = data.split("\r\n")[0]  # the first line of the response
+        code = status.split(" ")[1]     # code comes after the first space
+        return int(code)
 
     def get_headers(self,data):
-        return None
+        headers = {}
+        without_body = data.split("\r\n\r\n", 1)[0]         # body comes after \r\n\r\n
+        header_lines = without_body.split("\r\n", 1)[1:]    # everything after status line is a header
+        for line in header_lines:
+            if ": " in line:
+                key, value = line.split(": ", 1)
+                headers[key] = value
+        return headers
 
     def get_body(self, data):
-        return None
+        body = data.split("\r\n\r\n", 1)
+        if len(body) > 1:   # check if body exists
+            return body[1]
+        return ""
     
-
     def sendall(self, data):
         self.socket.sendall(data.encode('utf-8'))
         
@@ -41,11 +55,11 @@ class HTTPClient:
     def GET(self, url, args=None):
         ip, port, path, queries, query_byte_count = self.parse_url(url)
         
-        print(ip)
-        print(port)
-        print(path)
-        print(queries)
-        print(query_byte_count)
+        # print(ip)
+        # print(port)
+        # print(path)
+        # print(queries)
+        # print(query_byte_count)
 
         # build the request
         # header
@@ -57,27 +71,25 @@ class HTTPClient:
 
         # no body (because it's GET)
 
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.connect((ip, port))
-            print(f"connected to server at host {ip} and port {port}")
+        self.connect(ip, port)
+        self.socket.sendall(request.encode("utf-8"))
+        response_bytes = self.read_response()
+        response_str = response_bytes.decode("utf-8")
+        self.close()
 
-            self.socket = sock
-            sock.sendall(request.encode("utf-8"))
-            response_bytes = self.read_response()
-
-            print(response_bytes)
+        code = self.get_code(response_str)
+        body = self.get_body(response_str)
         
-        return "Not yet implemented"
         return HTTPResponse(code, body)
 
     def POST(self, url, args=None):
         ip, port, path, queries, query_byte_count = self.parse_url(url)
         
-        print(ip)
-        print(port)
-        print(path)
-        print(queries)
-        print(query_byte_count)
+        # print(ip)
+        # print(port)
+        # print(path)
+        # print(queries)
+        # print(query_byte_count)
 
         # build the request
         # header
@@ -94,17 +106,15 @@ class HTTPClient:
         unencoded_query = url.split("?", 1)[1]  # split once, the second half is the query
         print("body: " + unencoded_query)
 
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.connect((ip, port))
-            print(f"connected to server at host {ip} and port {port}")
-
-            self.socket = sock
-            sock.sendall(request.encode("utf-8"))
-            response_bytes = self.read_response()
-
-            print(response_bytes)
+        self.connect(ip, port)
+        self.socket.sendall(request.encode("utf-8"))
+        response_bytes = self.read_response()
+        response_str = response_bytes.decode("utf-8")
+        self.close()
         
-        return "Not yet implemented"
+        code = self.get_code(response_str)
+        body = self.get_body(response_str)
+        
         return HTTPResponse(code, body)
 
     def parse_url(self, url):
@@ -191,3 +201,6 @@ if __name__ == "__main__":
     if key is not None:
         args[key] = ""
     result = client.command(method, url, args)
+    print("Response code:", result.code)
+    print("Response body:")
+    print(result.body)

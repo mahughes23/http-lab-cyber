@@ -43,19 +43,25 @@ class LabHttpTCPHandler(socketserver.StreamRequestHandler):
         headers = self.parse_headers()
         
         serving_dir = Path("./www")
-        if decoded_path[-1] == "/":    # if the path ends in /, serve index.html
-            path = (serving_dir / decoded_path.lstrip("/") / "index.html").resolve()    # this doesn't work unless I remove the leading / from decoded_path
-        else:
-            self.send_error(301, "Moved Permanently")
-            return
+        full_path = serving_dir / decoded_path.lstrip("/")  # this doesn't work unless I remove the first "/"
+        if not full_path.exists():
+            self.send_error(404, "Not Found")
+        if full_path.is_dir():
+            if decoded_path[-1] != "/":
+                # redirect to directory path
+                self.send_error(301, "Moved Permanently", headers={"Location": path + "/"})
+                return
+            else:
+                # serve index.html within the directory by default
+                full_path = full_path / "index.html"
         
-        if not path.exists():
+        if not full_path.exists():
             self.send_error(404, "Not Found")
             return
         
-        content = path.read_bytes()
+        content = full_path.read_bytes()
         # get the mime type of the file being served (assume only html and css)
-        extension = path.suffix.lower()
+        extension = full_path.suffix.lower()
         mime_type = "application/octet-stream"  # just in case the filetype isn't html or css
         if extension == ".html":
             mime_type = "text/html"
@@ -95,8 +101,14 @@ class LabHttpTCPHandler(socketserver.StreamRequestHandler):
 
         return bytes(result).decode("utf-8")    # turn result into bytes like xc3 and then decode to normal chars
 
-    def send_error(self, code, message):
-        print("ERROR!!! (Implement later)")
+    def send_error(self, code, message, headers=None):
+        self.wfile.write(f"HTTP/1.1 {str(code)} {message}\r\n".encode())
+        if headers:
+            for key, value in headers.items():
+                self.wfile.write(f"{key}: {value}\r\n".encode())
+        self.wfile.write(f"Content-Length: 0\r\n".encode())
+        self.wfile.write(b"Connection: close\r\n")
+        self.wfile.write(b"\r\n")
 
 def main():
     # From https://docs.python.org/3/library/socketserver.html, The Python Software Foundation, downloaded 2024-01-07
