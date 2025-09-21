@@ -12,7 +12,10 @@ class HTTPResponse:
 class HTTPClient:
     
     def connect(self, host, port):
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        if ':' in host: # IPv6
+            self.socket = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+        else:
+            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.connect((host, port)) 
         print(f"connected to server at host {host} and port {port}")
         return
@@ -54,18 +57,33 @@ class HTTPClient:
 
     def GET(self, url, args=None):
         ip, port, path, queries, query_byte_count = self.parse_url(url)
-        
-        # print(ip)
-        # print(port)
-        # print(path)
-        # print(queries)
-        # print(query_byte_count)
+
+        if args and len(args) > 0:
+            # build body from the args
+            query_parts = []
+            for key, value in args.items():
+                encoded_key = self.percent_encode(key)[0]
+                encoded_value = self.percent_encode(value)[0]
+                query_parts.append(f"{encoded_key}={encoded_value}")
+            args_query = "?" + "&".join(query_parts)
+
+            if queries:
+                queries = queries + "&" + args_query[1:]    # [1:] to remove ? since queries already has it
+            else:
+                queries = args_query
 
         # build the request
         # header
         request = "GET "
         request += ("/" + (path or "") + (queries or "") + " HTTP/1.1\r\n")
-        request += ("Host: " + (ip or "") + ":" + str(port or "") + "\r\n")
+        if ':' in ip:   # IPv6
+            if port == 80:
+                host_header = "[" + ip + "]"
+            else:
+                host_header = "[" + ip + "]:" + str(port)
+        else:  # IPv4 address or hostname
+            host_header = ip + ":" + str(port)
+        request += ("Host: " + host_header + "\r\n")
         request += ("Connection: close\r\n")    # close the port as per the hints
         request += "\r\n"   # headers end with a blank line
 
@@ -74,7 +92,10 @@ class HTTPClient:
         self.connect(ip, port)
         self.socket.sendall(request.encode("utf-8"))
         response_bytes = self.read_response()
-        response_str = response_bytes.decode("utf-8")
+        try:
+            response_str = response_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            response_str = response_bytes.decode("iso-8859-1")
         self.close()
 
         code = self.get_code(response_str)
@@ -84,32 +105,46 @@ class HTTPClient:
 
     def POST(self, url, args=None):
         ip, port, path, queries, query_byte_count = self.parse_url(url)
-        
-        # print(ip)
-        # print(port)
-        # print(path)
-        # print(queries)
-        # print(query_byte_count)
 
         # build the request
         # header
         request = "POST "
         request += ("/" + (path or "") + (queries or "") + " HTTP/1.1\r\n")
-        request += ("Host: " + (ip or "") + ":" + str(port or "") + "\r\n")
+        if ':' in ip:   # IPv6
+            if port == 80:
+                host_header = "[" + ip + "]"
+            else:
+                host_header = "[" + ip + "]:" + str(port)
+        else:  # IPv4 address or hostname
+            host_header = ip + ":" + str(port)
+        request += ("Host: " + host_header + "\r\n")
         request += ("Connection: close\r\n")    # close the port as per the hints
-        if queries is not None:
-            request += ("Content-Type: application/x-www-form-urlencoded\r\n")
-            request += ("Content-Length: " + str(query_byte_count) + "\r\n")
-        request += "\r\n"   # headers end with a blank line
 
         # body
-        unencoded_query = url.split("?", 1)[1]  # split once, the second half is the query
-        print("body: " + unencoded_query)
+        body = ""
+        if args and len(args) > 0:
+            # build body from the args
+            body_parts = []
+            for key, value in args.items():
+                encoded_key = self.percent_encode(key)[0]
+                encoded_value = self.percent_encode(value)[0]
+                body_parts.append(f"{encoded_key}={encoded_value}")
+            body = "&".join(body_parts)
+
+            request += "Content-Type: application/x-www-form-urlencoded\r\n"
+            request += "Content-Length: " + str(len(body)) + "\r\n"
+        
+        request += "\r\n"  # headers end with a blank line
 
         self.connect(ip, port)
         self.socket.sendall(request.encode("utf-8"))
+        if body:
+            self.socket.sendall(body.encode("utf-8"))
         response_bytes = self.read_response()
-        response_str = response_bytes.decode("utf-8")
+        try:
+            response_str = response_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            response_str = response_bytes.decode("iso-8859-1")
         self.close()
         
         code = self.get_code(response_str)
@@ -118,42 +153,44 @@ class HTTPClient:
         return HTTPResponse(code, body)
 
     def parse_url(self, url):
-        no_protocol = url.split("//")
-        ip_and_port, path_and_queries = no_protocol[1].split("/", 1)
+        no_protocol = url.split("//", 1)
+        
+        if "/" in no_protocol[1]:   # something like google.com may not have a "/"
+            ip_and_port, path_and_queries = no_protocol[1].split("/", 1)
+        else:
+            ip_and_port = no_protocol[1]
+            path_and_queries = ""
         
         ip = None
         port = None
         if "]" in ip_and_port:  # if IPv6, split it by the closed bracket
             ip, port = ip_and_port.split("]", 1)
             ip = ip[1:]     # remove the first "[" to isolate the ip
-            port = port[1:] # remove the left-over ":" to isolate the port
-            if port == "":   # if port is empty, set it to default value of 80
-                port = 80
+            if port.startswith(":"):
+                port = int(port[1:])    # remove the ":"
             else:
-                pass
-                # port = int(port)    # convert it to an int
+                port = 80   # default
         else:   # IPv4
             if ":" in ip_and_port:  # if there's a port separator
                 ip, port = ip_and_port.split(":")
             else:
                 ip = ip_and_port
                 port = 80   # default
+            port = int(port)
 
         path = None
         queries = None
         if "?" in path_and_queries:     # if there are any specified queries
             path, queries = path_and_queries.split("?", 1)
+            queries = "?" + queries # add the "?" back
         else: 
             path = path_and_queries
 
         query_byte_count = 0
         if path:
-            path = self.percent_encode(path)[0]
+            path = self.percent_encode_path(path)[0]
         if queries:
             queries, query_byte_count = self.percent_encode(queries)
-
-        # convert port to int
-        port = int(port)
 
         parsed_url = [ip, port, path, queries, query_byte_count]
         return parsed_url
@@ -162,13 +199,29 @@ class HTTPClient:
         result = []
         byte_count = 0
         for char in string:
-            if (char in "-_./") or "A" <= char <= "Z" or "a" <= char <= "z" or "0" <= char <= "9":   # we don't want to encode these
+            if (char in "-_.~") or "A" <= char <= "Z" or "a" <= char <= "z" or "0" <= char <= "9":   # we don't want to encode these
                 result.append(char) # add the normal char to the result
+                byte_count += 1
             else:
                 # encode the char
                 for byte in char.encode("utf-8"):   # will parse "é" as xc3 xc9 for example
                     result.append(f"%{byte:02X}")   # set the format to uppercase hexadecimal with 2 digits
-            byte_count += 1
+                    byte_count += 1
+        return ["".join(result), byte_count]
+
+    def percent_encode_path(self, string):
+        ''' Same as percent_encode but allows forward slashes '''
+        result = []
+        byte_count = 0
+        for char in string:
+            if (char in "-_.~/") or "A" <= char <= "Z" or "a" <= char <= "z" or "0" <= char <= "9":   # we don't want to encode these
+                result.append(char) # add the normal char to the result
+                byte_count += 1
+            else:
+                # encode the char
+                for byte in char.encode("utf-8"):
+                    result.append(f"%{byte:02X}")
+                    byte_count += 1
         return ["".join(result), byte_count]
     
     def command(self, command, url, args):

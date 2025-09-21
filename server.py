@@ -42,10 +42,15 @@ class LabHttpTCPHandler(socketserver.StreamRequestHandler):
         decoded_path = self.percent_decode(path)
         headers = self.parse_headers()
         
-        serving_dir = Path("./www")
-        full_path = serving_dir / decoded_path.lstrip("/")  # this doesn't work unless I remove the first "/"
+        serving_dir = Path("./www").resolve()
+        full_path = (serving_dir / decoded_path.lstrip("/")).resolve()  # this doesn't work unless I remove the first "/"
+        # Don't let the user leave ./www
+        if serving_dir not in full_path.parents and full_path != serving_dir:
+            self.send_error(403, "Forbidden")
+            return
         if not full_path.exists():
             self.send_error(404, "Not Found")
+            return
         if full_path.is_dir():
             if decoded_path[-1] != "/":
                 # redirect to directory path
