@@ -1,0 +1,4 @@
+{"ts": "2025-09-22T22:51:44.314906Z", "ip": "127.0.0.1", "method": "GET", "path": "/test", "status": 404, "length": 0}
+{"ts": "2025-09-22T22:53:54.462799Z", "ip": "127.0.0.1", "method": "POST", "path": "/test", "status": 405, "length": 0}
+{"ts": "2025-09-22T22:57:13.901251Z", "ip": "127.0.0.1", "method": "POST", "path": "/", "status": 405, "length": 0}
+{"ts": "2025-09-22T22:57:29.610882Z", "ip": "127.0.0.1", "method": "GET", "path": "/", "status": 200, "length": 315}
