@@ -5,6 +5,8 @@ A basic Python 3 HTTP/1.1 server.
 """
 
 import socketserver
+from datetime import datetime
+import json
 import pathlib
 from pathlib import Path
 
@@ -12,7 +14,9 @@ HOST = "0.0.0.0"
 PORT = 8000
 BUFSIZE = 4096
 LINE_ENDING='\r\n'
-SERVE_PATH = pathlib.Path('www').resolve()
+SERVE_PATH = Path('www').resolve()
+REQUEST_LOG_FILE = Path("logs/access.jsonl")
+REQUEST_LOG_FILE.parent.mkdir(exist_ok=True)
 HTTP_1_1 = 'HTTP/1.1'
 
 class LabHttpTcpServer(socketserver.TCPServer):
@@ -36,6 +40,9 @@ class LabHttpTCPHandler(socketserver.StreamRequestHandler):
         
         # Extract the method and path from the request
         method, path, _ = request_line.split(' ', 2)
+        # save the method and path in case the error function needs to log the request
+        self.last_method = method
+        self.last_path = path
         if method != "GET":
             self.send_error(405, "Method Not Allowed")
             return
@@ -78,7 +85,16 @@ class LabHttpTCPHandler(socketserver.StreamRequestHandler):
         self.wfile.write(f"Content-Type: {mime_type}\r\n".encode())
         self.wfile.write(b"Connection: close\r\n")
         self.wfile.write(b"\r\n")
-        self.wfile.write(content)        
+        self.wfile.write(content)   
+
+        # log successful request
+        self.log_request(
+            self.client_address[0], # ip
+            method,                 # GET, POST, etc.
+            path,                   # requested path
+            200,                    # status code
+            len(content)            # response length
+        )     
 
     def parse_headers(self):
         headers = {}
@@ -114,6 +130,29 @@ class LabHttpTCPHandler(socketserver.StreamRequestHandler):
         self.wfile.write(f"Content-Length: 0\r\n".encode())
         self.wfile.write(b"Connection: close\r\n")
         self.wfile.write(b"\r\n")
+
+        # log error
+        self.log_request(
+            self.client_address[0],
+            getattr(self, "last_method", "-"),  # fallback if method not parsed
+            getattr(self, "last_path", "-"),
+            code,
+            0
+        )
+
+        return
+
+    def log_request(self, client_ip, method, path, status, length):
+        entry = {
+            "ts": datetime.utcnow().isoformat() + "Z",
+            "ip": client_ip,
+            "method": method,
+            "path": path,
+            "status": status,
+            "length": length
+        }
+        with REQUEST_LOG_FILE.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + "\n")
 
 def main():
     # From https://docs.python.org/3/library/socketserver.html, The Python Software Foundation, downloaded 2024-01-07

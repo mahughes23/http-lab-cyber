@@ -10,7 +10,8 @@ I have since extended it to a personal cybersecurity project to explore how real
 ## Security Learning Extensions
 As I extend this project, I'm documenting my process with three main types of notes:
 - threat_model.md: Brainstorming possible threats to the server and outlining defenses.
-- logs/: A folder for experiment logs with dates, what I tested, what happened, and what I learned.
+- notes/: A folder for learning notes/experiments with dates, what I tested, what happened, and what I learned.
+- logs/: A folder for raw data from the server.
 - experiments/: A folder for test scripts, malicious inputs, and generally any code I use to attack or defend my server.
 
 ## Acknowledgements
