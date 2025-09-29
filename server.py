@@ -8,6 +8,7 @@ import socketserver
 from datetime import datetime
 import json
 import pathlib
+import time
 from pathlib import Path
 
 HOST = "0.0.0.0"
@@ -35,6 +36,8 @@ class LabHttpTCPHandler(socketserver.StreamRequestHandler):
         self.wfile.write((line + LINE_ENDING).encode(self.charset, 'ignore'))
 
     def handle(self):
+        start_time = time.time()    # for tracking processing time
+
         # Receive and decode the request
         request_line = self.rfile.readline().strip().decode('utf-8')
         
@@ -87,13 +90,18 @@ class LabHttpTCPHandler(socketserver.StreamRequestHandler):
         self.wfile.write(b"\r\n")
         self.wfile.write(content)   
 
+        duration = time.time() - start_time
+
         # log successful request
         self.log_request(
             self.client_address[0], # ip
             method,                 # GET, POST, etc.
             path,                   # requested path
-            200,                    # status code
-            len(content)            # response length
+            200,                    # status code (success)
+            len(content),           # response length
+            headers=headers,
+            duration=duration,
+            src_port=self.client_address[1]
         )     
 
     def parse_headers(self):
@@ -142,14 +150,17 @@ class LabHttpTCPHandler(socketserver.StreamRequestHandler):
 
         return
 
-    def log_request(self, client_ip, method, path, status, length):
+    def log_request(self, client_ip, method, path, status, length, headers=None, duration=None, src_port=None):
         entry = {
             "ts": datetime.utcnow().isoformat() + "Z",
             "ip": client_ip,
+            "src_port": src_port,
             "method": method,
             "path": path,
             "status": status,
-            "length": length
+            "length": length,
+            "duration_ms": round(duration * 1000, 2) if duration else None,
+            "headers": headers or {}
         }
         with REQUEST_LOG_FILE.open("a", encoding="utf-8") as f:
             f.write(json.dumps(entry) + "\n")
